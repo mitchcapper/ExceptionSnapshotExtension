@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -43,7 +43,7 @@ namespace ExceptionSnapshotExtension.Controls
         private static object OnCoerceDataContext(DependencyObject depObj, object value)
         {
             if (!(depObj is DataContextSpy spy))
-            {
+           {
                 return value;
             }
 

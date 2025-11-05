@@ -1,4 +1,4 @@
-﻿using ExceptionSnapshotExtension.Model;
+using ExceptionSnapshotExtension.Model;
 using ExceptionSnapshotExtension.Services;
 using System;
 using System.Collections.Generic;
@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 
 namespace ExceptionSnapshotExtension.Viewmodels
 {
@@ -137,7 +138,9 @@ namespace ExceptionSnapshotExtension.Viewmodels
                         if (SelectedSnapshot != null)
                         {
                             Debug.Assert(SnapshotVms.Contains(SelectedSnapshot));
-
+							var res = MessageBox.Show($"Are you sure you want to delete snapshot: {SelectedSnapshot.Name}","Confirm Delete",MessageBoxButton.YesNo);
+							if (res != MessageBoxResult.Yes)
+								return;
                             int selectedId = SelectedSnapshotIndex;
                             SnapshotVms.Remove(SelectedSnapshot);
                             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SnapshotVms)));
