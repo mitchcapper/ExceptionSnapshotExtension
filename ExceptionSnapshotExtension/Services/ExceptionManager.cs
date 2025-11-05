@@ -1,4 +1,6 @@
+using EnvDTE;
 using ExceptionSnapshotExtension.Model;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Debugger.Interop;
 using Microsoft.VisualStudio.Debugger.Interop.Internal;
 using Microsoft.VisualStudio.Shell;
@@ -6,10 +8,8 @@ using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
-using EnvDTE;
-using Microsoft.VisualStudio;
 using System.Reactive.Linq;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace ExceptionSnapshotExtension.Services {
@@ -217,22 +217,22 @@ namespace ExceptionSnapshotExtension.Services {
 			ThreadHelper.ThrowIfNotOnUIThread();
 			if (subscribed)
 				return;
-				subscribed = true;
-				Marshal.ThrowExceptionForHR(VsDebugger.AdviseDebuggerEvents(this, out AdviseDebuggerEventsCookie));
-				var dbgMode = new DBGMODE[1];
-				OnModeChange(dbgMode[0]);
-			
+			subscribed = true;
+			Marshal.ThrowExceptionForHR(VsDebugger.AdviseDebuggerEvents(this, out AdviseDebuggerEventsCookie));
+			var dbgMode = new DBGMODE[1];
+			OnModeChange(dbgMode[0]);
+
 		}
 		public void DetachEventsListener() {
 			ThreadHelper.ThrowIfNotOnUIThread();
 			if (!subscribed)
 				return;
-			if (AdviseDebuggerEventsCookie != 0){
+			if (AdviseDebuggerEventsCookie != 0) {
 				VsDebugger.UnadviseDebuggerEvents(AdviseDebuggerEventsCookie);
 				OnModeChange(DBGMODE.DBGMODE_Design);//to stop it as well
 			}
 		}
-		
+
 		private uint AdviseDebuggerEventsCookie;
 
 
@@ -390,7 +390,7 @@ namespace ExceptionSnapshotExtension.Services {
 				count--;
 			}
 		}
-		
+
 		Regex ExceptionDescExtraInfo = new(@" in (?<module>.+)\n(?<descRest>.+)", RegexOptions.Singleline | RegexOptions.Compiled);
 		public int Event(IDebugEngine2 pEngine, IDebugProcess2 pProcess, IDebugProgram2 pProgram, IDebugThread2 pThread, IDebugEvent2 pEvent, ref Guid riidEvent, uint dwAttrib) {
 			// 51a94113-8788-4a54-ae15-08b74ff922d0 IDebugExceptionEvent2 IDebugExceptionEvent150 AD7StoppingEvent
@@ -511,6 +511,6 @@ namespace ExceptionSnapshotExtension.Services {
 			System.Diagnostics.Debug.WriteLine("ESE: " + msg);
 		}
 
-		
+
 	}
 }
