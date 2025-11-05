@@ -1,16 +1,28 @@
 using Microsoft.VisualStudio.Debugger.Interop;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ExceptionSnapshotExtension.Model {
 	internal class ExceptionInfo {
+		protected bool DoSet<T>(ref T field, T value) {
+			if (EqualityComparer<T>.Default.Equals(field, value))
+				return false;
+			field = value;
+			HasChanged = true;
+			return true;
+		}
 
 		public string Name { get; }
 		public string GroupName { get; }
-		public enum_EXCEPTION_STATE State { get; set; }
+		public enum_EXCEPTION_STATE State { get; set => DoSet(ref field, value); }
 
 		// The identification code for the exception or run-time error.
-		public uint Code { get; set; }
+		public uint Code { get; set => DoSet(ref field, value); }
+
+		[JsonIgnore]
+		internal bool HasChanged { get; set; }
 
 		[JsonIgnore]
 		public bool BreakFirstChance {
@@ -27,7 +39,7 @@ namespace ExceptionSnapshotExtension.Model {
 			}
 		}
 
-		public Condition[] Conditions { get; set; }
+		public Condition[] Conditions { get; set => DoSet(ref field, value); }
 
 		public ExceptionInfo(string name, string groupName) {
 			Name = name;
@@ -37,11 +49,20 @@ namespace ExceptionSnapshotExtension.Model {
 			if (obj is null || this is null && obj != this) return false;
 			if (obj is not ExceptionInfo ex) return false;
 			if (!Name.Equals(ex.Name) || !GroupName.Equals(ex.GroupName) || Code != ex.Code || State != ex.State) return false;
-			if (Conditions?.Length != ex.Conditions?.Length) return false;
-			if (Conditions != null) {
-				for (int i = 0; i < Conditions.Length; i++) {
-					if (!Conditions[i].Equals(ex.Conditions[i])) return false;
-				}
+			return ConditionsEqual(Conditions, ex.Conditions);
+		}
+
+		public static bool ConditionsEqual(ICollection<Condition> a, ICollection<Condition> b) {
+			if (a == null || b == null) return a == b;
+
+			if (a.Count != b.Count)
+				return false;
+
+			var itrA = a.OrderBy(a => a.Value).GetEnumerator();
+			var itrB = b.OrderBy(a => a.Value).GetEnumerator();
+			while (itrA.MoveNext() && itrB.MoveNext()) {
+				if (!itrA.Current.Equals(itrB.Current))
+					return false;
 			}
 			return true;
 		}

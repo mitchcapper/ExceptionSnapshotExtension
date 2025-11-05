@@ -7,22 +7,9 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Windows;
 
 namespace ExceptionSnapshotExtension.Viewmodels {
-	internal class BaseObservableClass : INotifyPropertyChanged {
-		protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string propertyName = null) {
-			if (EqualityComparer<T>.Default.Equals(field, value))
-				return false;
-			field = value;
-			FirePropertyChanged(propertyName);
-			return true;
-		}
-		protected void FirePropertyChanged([CallerMemberName] string propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-
-		public event PropertyChangedEventHandler PropertyChanged;
-	}
 	internal class ToolWindowVM : BaseObservableClass {
 
 
@@ -92,18 +79,20 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 			if (!CurrentState.IsExceptionActive) //slight race condition should copylocal first
 				return;
 			m_ExceptionManager.SetBreakOnException(CurrentState.ExceptionType, false);
-			//GoCommand.Execute(null);
+			GoCommand.Execute(null);
 		});
 
 		public RelayCommand IgnoreAllFromModuleCommand => field ??= new RelayCommand(p => true, p => {
 			if (!CurrentState.IsExceptionActive)
 				return;
 			m_ExceptionManager.ExcludeModuleFromExceptions(CurrentState.ModuleName);
+			GoCommand.Execute(null);
 		});
 		public RelayCommand IgnoreThisFromModuleCommand => field ??= new RelayCommand(p => true, p => {
 			if (!CurrentState.IsExceptionActive)
 				return;
 			m_ExceptionManager.ExcludeModuleFromExceptions(CurrentState.ModuleName, CurrentState.ExceptionType);
+			GoCommand.Execute(null);
 		});
 
 		public RelayCommand DeleteSnapshotCommand => field ??= new RelayCommand(p => true, p => {
