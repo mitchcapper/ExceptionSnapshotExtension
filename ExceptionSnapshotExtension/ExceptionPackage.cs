@@ -2,7 +2,9 @@ using ExceptionSnapshotExtension.Model;
 using ExceptionSnapshotExtension.Services;
 using ExceptionSnapshotExtension.Viewmodels;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -79,28 +81,66 @@ namespace ExceptionSnapshotExtension {
 			await SnapshotWindowCommand.InitializeAsync(this);
 		}
 
-		protected override void OnSaveOptions(string key, Stream stream) {
+		protected override async void OnSaveOptions(string key, Stream stream) {
 			if (key != SETTINGS_KEY) {
 				base.OnSaveOptions(key, stream);
 			} else {
 				try {
 					//TODO: see what will happen if exception is thrown here
-					m_SnapshotSerializer.Serialize(MasterViewModel.Snapshots, stream);
+					if (SettingsManager.STORE_WHERE == SettingsManager.STORE_SNAPSHOTS_WHERE.InJsonNextToSolution) {
+						await this.JoinableTaskFactory.SwitchToMainThreadAsync(default);
+						var fl = GetNextToSlnFile();
+						if (fl != null) {
+							using var fStream = File.Create(fl);
+							m_SnapshotSerializer.Serialize(MasterViewModel.Snapshots, fStream);
+						}
+
+
+					} else
+						m_SnapshotSerializer.Serialize(MasterViewModel.Snapshots, stream);
+
 				} catch (Exception ex) {
 
 				}
 			}
 		}
 
-		protected override void OnLoadOptions(string key, Stream stream) {
+		protected override async void OnLoadOptions(string key, Stream stream) {
 			if (key != SETTINGS_KEY) {
-				base.OnSaveOptions(key, stream);
+				base.OnLoadOptions(key, stream);
 			} else {
-				//TODO: add error handling
-				var snaposhots = m_SnapshotSerializer.Deserialize(stream);
-				MasterViewModel.Snapshots = snaposhots;
+				try {
+					//TODO: add error handling
+					IEnumerable<Snapshot> snaposhots;
+					if (SettingsManager.STORE_WHERE == SettingsManager.STORE_SNAPSHOTS_WHERE.InJsonNextToSolution) {
+						await this.JoinableTaskFactory.SwitchToMainThreadAsync(default);
+						using var fStream = File.OpenRead(GetNextToSlnFile());
+						snaposhots = m_SnapshotSerializer.Deserialize(snapshots: fStream);
+					} else
+						snaposhots = m_SnapshotSerializer.Deserialize(stream);
+					MasterViewModel.Snapshots = snaposhots;
+				} catch { }
 			}
 		}
+		protected string GetNextToSlnFile() {
+			var solutionPath = GetSolutionPath();
+			if (string.IsNullOrEmpty(solutionPath))
+				return null;
+			var dir = Path.GetDirectoryName(solutionPath);
+			var fileName = Path.GetFileNameWithoutExtension(solutionPath) + ".ExceptionSnapshots.json";
+			return Path.Combine(dir, fileName);
+		}
+
+		private string GetSolutionPath() {
+			ThreadHelper.ThrowIfNotOnUIThread();
+			var solution = GetService(typeof(SVsSolution)) as IVsSolution;
+			if (solution != null) {
+				solution.GetSolutionInfo(out string solutionDirectory, out string solutionFile, out string userOptsFile);
+				return solutionFile;
+			}
+			return null;
+		}
+
 
 		#endregion
 	}

@@ -67,12 +67,18 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 		public bool FailedValidation {
 			get; set => SetProperty(ref field, value);
 		}
+		protected void OnException(Exception ex){
+			System.Diagnostics.Debug.WriteLine($"Exception in ToolWindowVM Command: {ex}");
+		}
+
+		public RelayCommand GoCommand => field ??= new RelayCommand(p => true, p => m_ExceptionManager.ResumeDebugging());
 
 		public RelayCommand EnableAllCommand => field ??= new RelayCommand(p => true, p => m_ExceptionManager.EnableAll());
 
 		public RelayCommand DisableAllCommand => field ??= new RelayCommand(p => true, p => m_ExceptionManager.DisableAll());
 
-		public RelayCommand SaveSnapshotCommand => field ??= new RelayCommand(p => true, p => {
+		public NiceRelayCommand SaveSnapshotCommand => field ??= new NiceRelayCommand(p => true, p => {
+
 			if (!string.IsNullOrEmpty(NewSnapshotName)) {
 				var snapshot = m_ExceptionManager.GetCurrentExceptionSnapshot();
 				snapshot.Name = NewSnapshotName;
@@ -80,6 +86,24 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 			} else
 				FailedValidation = true;
 
+
+		},onException:OnException);
+		public RelayCommand IgnoreThisExceptionCommand => field ??= new RelayCommand(p => true, p => {
+			if (!CurrentState.IsExceptionActive) //slight race condition should copylocal first
+				return;
+			m_ExceptionManager.SetBreakOnException(CurrentState.ExceptionType, false);
+			//GoCommand.Execute(null);
+		});
+
+		public RelayCommand IgnoreAllFromModuleCommand => field ??= new RelayCommand(p => true, p => {
+			if (!CurrentState.IsExceptionActive)
+				return;
+			m_ExceptionManager.ExcludeModuleFromExceptions(CurrentState.ModuleName);
+		});
+		public RelayCommand IgnoreThisFromModuleCommand => field ??= new RelayCommand(p => true, p => {
+			if (!CurrentState.IsExceptionActive)
+				return;
+			m_ExceptionManager.ExcludeModuleFromExceptions(CurrentState.ModuleName, CurrentState.ExceptionType);
 		});
 
 		public RelayCommand DeleteSnapshotCommand => field ??= new RelayCommand(p => true, p => {
@@ -95,7 +119,11 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 			}
 		});
 
-		public RelayCommand ActivateSnapshotCommand => field ??= new RelayCommand(p => true, p => {
+
+		public NiceRelayCommand ActivateSnapshotCommand => field ??= new NiceRelayCommand(p => true, p => {
+			if (this.SetToDefaultsBeforeRestoring)
+				m_ExceptionManager.ResetExceptionsToDefaults();
+
 			if (p is SnapshotVM snapshotVM) {
 				for (int i = 0; i < 10; i++) // I've had issues with snapshot not being restored after first attempt.
 				{
@@ -105,10 +133,12 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 						}
 
 						m_ExceptionManager.RestoreSnapshot(snapshotVM.Snapshot);
+						break;
 					}
 				}
 			}
-		});
+
+		},onException:OnException);
 
 		public ToolWindowVM() // For designer
 		{
@@ -131,6 +161,10 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 			);
 		}
 
+		public bool SetToDefaultsBeforeRestoring {
+			get; set => SetProperty(ref field, value);
+		}
+
 		public ToolWindowVM(IExceptionManager exceptionManager) {
 			m_ExceptionManager = exceptionManager;
 			SnapshotVms = new ObservableCollection<SnapshotVM>();
@@ -138,7 +172,7 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 
 
 		private void DebugStatusChanged(object sender, DBGMODE e) {
-			if (e == DBGMODE.DBGMODE_Design) {
+			if (e != DBGMODE.DBGMODE_Break) {
 				CurrentState = new();
 			}
 			CurrentState.DebuggerMode = e;

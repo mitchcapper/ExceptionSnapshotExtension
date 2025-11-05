@@ -1,66 +1,65 @@
 using System;
 using System.Reflection;
 using System.Reflection.Emit;
-
+using System.Linq.Expressions;
+using System.Linq;
 namespace AttachedCommandBehavior {
 	/// <summary>
 	/// Generates delegates according to the specified signature on runtime
 	/// </summary>
 	public static class EventHandlerGenerator {
+
+
 		/// <summary>
-		/// Generates a delegate with a matching signature of the supplied eventHandlerType
-		/// This method only supports Events that have a delegate of type void
+		/// Generates a delegate with a matching signature of the supplied eventHandlerType.
+		/// This method only supports Events that have a delegate of type void.
 		/// </summary>
-		/// <param name="eventInfo">The delegate type to wrap. Note that this must always be a void delegate</param>
-		/// <param name="methodToInvoke">The method to invoke</param>
-		/// <param name="methodInvoker">The object where the method resides</param>
-		/// <returns>Returns a delegate with the same signature as eventHandlerType that calls the methodToInvoke inside</returns>
-		public static Delegate CreateDelegate(Type eventHandlerType, MethodInfo methodToInvoke, object methodInvoker) {
-			//Get the eventHandlerType signature
-			var eventHandlerInfo = eventHandlerType.GetMethod("Invoke");
-			Type returnType = eventHandlerInfo.ReturnParameter.ParameterType;
-			if (returnType != typeof(void))
-				throw new ApplicationException("Delegate has a return type. This only supprts event handlers that are void");
+		/// <param name="eventHandlerType">The delegate type to wrap. Note that this must always be a void delegate.</param>
+		/// <param name="methodToInvoke">The method to invoke. This method is expected to take no arguments.</param>
+		/// <param name="instance">The instance (if not static) to call the method on</param>
+		/// <returns>Returns a delegate with the same signature as eventHandlerType that calls the methodToInvoke inside.</returns>
+		public static Delegate CreateDelegate(Type eventHandlerType, MethodInfo methodToInvoke, object instance) {
+			if (eventHandlerType == null) {
+				throw new ArgumentNullException(nameof(eventHandlerType));
+			}
+			if (!typeof(Delegate).IsAssignableFrom(eventHandlerType)) {
+				throw new ArgumentException("The supplied type must be a delegate type.", nameof(eventHandlerType));
+			}
+			if (methodToInvoke == null) {
+				throw new ArgumentNullException(nameof(methodToInvoke));
+			}
+			if (!methodToInvoke.IsStatic && instance == null) {
+				throw new ArgumentNullException(nameof(instance), "An instance method requires a non-null invoker instance.");
+			}
+			if (methodToInvoke.GetParameters().Length > 0) {
+				throw new ArgumentException("The methodToInvoke is expected to have zero arguments.", nameof(methodToInvoke));
+			}
+			MethodInfo eventHandlerInvoke = eventHandlerType.GetMethod("Invoke") ?? throw new ArgumentException("Unable to resolve the Invoke method on the delegate type.", nameof(eventHandlerType));
+			if (eventHandlerInvoke.ReturnType != typeof(void)) {
+				throw new ApplicationException("This only supports event handlers that return void.");
+			}
+			ParameterInfo[] delegateParams = eventHandlerInvoke.GetParameters();
+			ParameterExpression[] handlerParameters = delegateParams.Select(p => Expression.Parameter(p.ParameterType, p.Name)).ToArray();
 
-			ParameterInfo[] delegateParameters = eventHandlerInfo.GetParameters();
-			//Get the list of type of parameters. Please note that we do + 1 because we have to push the object where the method resides i.e methodInvoker parameter
-			Type[] hookupParameters = new Type[delegateParameters.Length + 1];
-			hookupParameters[0] = methodInvoker.GetType();
-			for (int i = 0; i < delegateParameters.Length; i++)
-				hookupParameters[i + 1] = delegateParameters[i].ParameterType;
-
-			DynamicMethod handler = new DynamicMethod("", null,
-				hookupParameters, typeof(EventHandlerGenerator));
-
-			ILGenerator eventIL = handler.GetILGenerator();
-
-			//load the parameters or everything will just BAM :)
-			LocalBuilder local = eventIL.DeclareLocal(typeof(object[]));
-			eventIL.Emit(OpCodes.Ldc_I4, delegateParameters.Length + 1);
-			eventIL.Emit(OpCodes.Newarr, typeof(object));
-			eventIL.Emit(OpCodes.Stloc, local);
-
-			//start from 1 because the first item is the instance. Load up all the arguments
-			for (int i = 1; i < delegateParameters.Length + 1; i++) {
-				eventIL.Emit(OpCodes.Ldloc, local);
-				eventIL.Emit(OpCodes.Ldc_I4, i);
-				eventIL.Emit(OpCodes.Ldarg, i);
-				eventIL.Emit(OpCodes.Stelem_Ref);
+			Expression instanceExpression = null;
+			if (!methodToInvoke.IsStatic) {
+				if (!methodToInvoke.DeclaringType.IsInstanceOfType(instance)) {
+					throw new ArgumentException("The provided methodInvoker is not compatible with the method to invoke.", nameof(instance));
+				}
+				instanceExpression = Expression.Constant(instance, methodToInvoke.DeclaringType);
 			}
 
-			eventIL.Emit(OpCodes.Ldloc, local);
+			MethodCallExpression methodCall = methodToInvoke.IsStatic
+				? Expression.Call(methodToInvoke)
+				: Expression.Call(instanceExpression, methodToInvoke);
 
-			//Load as first argument the instance of the object for the methodToInvoke i.e methodInvoker
-			eventIL.Emit(OpCodes.Ldarg_0);
+			LambdaExpression lambda = Expression.Lambda(
+				eventHandlerType,
+				methodCall,
+				handlerParameters
+			);
 
-			//Now that we have it all set up call the actual method that we want to call for the binding
-			eventIL.EmitCall(OpCodes.Call, methodToInvoke, null);
-
-			eventIL.Emit(OpCodes.Pop);
-			eventIL.Emit(OpCodes.Ret);
-
-			//create a delegate from the dynamic method
-			return handler.CreateDelegate(eventHandlerType, methodInvoker);
+			return lambda.Compile();
 		}
 
 	}

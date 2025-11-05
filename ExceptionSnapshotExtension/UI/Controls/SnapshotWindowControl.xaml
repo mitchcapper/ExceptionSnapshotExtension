@@ -107,20 +107,29 @@
 			</GroupBox>
 
 			<!-- Snapshot Management Section -->
-			<GroupBox Header="Snapshot Management" Grid.Row="1">
+			<GroupBox Header="Snapshot Management" Grid.Row="1" IsEnabled="{Binding ActivateSnapshotCommand.Executable,Mode=OneWay}">
+				<GroupBox.Style>
+					<Style TargetType="GroupBox" BasedOn="{StaticResource {x:Type GroupBox}}">
+						<Style.Triggers>
+							<Trigger Property="IsEnabled" Value="False">
+								<Setter Property="Opacity" Value="0.5"/>
+							</Trigger>
+						</Style.Triggers>
+					</Style>
+				</GroupBox.Style>
 				<Grid>
 					<Grid.ColumnDefinitions>
-						<ColumnDefinition Width="Auto"/>
 						<ColumnDefinition Width="*"/>
 						<ColumnDefinition Width="Auto"/>
 					</Grid.ColumnDefinitions>
 					<Grid.RowDefinitions>
 						<RowDefinition Height="Auto"/>
-						<RowDefinition Height="*" />
+						<RowDefinition Height="Auto" />
+						<RowDefinition Height="*"/>
 					</Grid.RowDefinitions>
 
 					<!-- Save Snapshot Row -->
-					<Grid Grid.Row="0" Grid.Column="1">
+					<Grid Grid.Row="0" >
 						<TextBox x:Name="SnapshotNameTextBox"
                                  MinWidth="150"
                                  Height="24"
@@ -158,23 +167,24 @@
 							</TextBlock.Style>
 						</TextBlock>
 					</Grid>
-					<Button Grid.Row="0" Grid.Column="2"
+					<Button Grid.Row="0" Grid.Column="1"
                             Content="Save"
-                            Command="{Binding SaveSnapshotCommand}"/>
+                            Command="{Binding SaveSnapshotCommand}" Margin="3,3,3,3"/>
 					<!--ScrollViewer.HorizontalScrollBarVisibility="Hidden"-->
+					<CheckBox Grid.Row="1" IsChecked="{Binding SetToDefaultsBeforeRestoring, Mode=TwoWay}" Content="Reset Exception Settings to default before loading a snapshot" Grid.ColumnSpan="2" />
 					<ListView
-                Grid.Row="1" d:Height="100"
-				Grid.ColumnSpan="3"
+                Grid.Row="2" d:Height="100"
+				Grid.ColumnSpan="2"
 	VerticalAlignment="Top"
 						Margin="0,5,0,0"
                 ItemsSource="{Binding SnapshotVms}"
-                SelectedValue="{Binding SelectedSnapshot, Mode=OneWayToSource}"
-                SelectedIndex="{Binding SelectedSnapshotIndex, Mode=TwoWay}"
+                SelectedValue="{Binding SelectedSnapshot}"
+                SelectedIndex="{Binding SelectedSnapshotIndex}"
                 Foreground="{DynamicResource {x:Static vsshell:VsBrushes.PanelTextKey}}"
                 Background="{DynamicResource {x:Static vsshell:VsBrushes.DropDownBackgroundKey}}"
                 BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.PanelBorderKey}}"
                 Loaded="ListView_Loaded"
-                SizeChanged="ListView_SizeChanged">
+                SizeChanged="ListView_SizeChanged" Grid.RowSpan="2">
 						<ListView.Resources>
 							<Ctr:DataContextSpy x:Key="dataContextSpy"/>
 							<Style TargetType="{x:Type ListViewItem}">
@@ -184,9 +194,6 @@
 								<Setter Property="acb:CommandBehavior.CommandParameter" Value="{Binding}" />
 								<Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"/>
 								<Style.Triggers>
-									<DataTrigger Binding="{Binding Path=FieldDef.DispDetail, Mode=OneWay}" Value="False">
-										<Setter Property="Visibility" Value="Collapsed"/>
-									</DataTrigger>
 									<Trigger Property="IsSelected" Value="true">
 										<Setter Property="Background" Value="{DynamicResource {x:Static vs_shell:TreeViewColors.SelectedItemActiveBrushKey}}" />
 										<Setter Property="Foreground" Value="{DynamicResource {x:Static vs_shell:TreeViewColors.SelectedItemActiveTextBrushKey}}" />
@@ -234,6 +241,7 @@
 									</GridViewColumn.CellTemplate>
 								</GridViewColumn>
 								<GridViewColumn Width="Auto" Header="Name" DisplayMemberBinding="{Binding Name}"/>
+								<GridViewColumn Width="Auto" Header="Date" DisplayMemberBinding="{Binding CreatedOn}"/>
 
 								<!--<GridViewColumn Width="Auto" Header="Break">
                             <GridViewColumn.CellTemplate>
@@ -284,22 +292,22 @@
 				<!-- Ignore List Options -->
 				<GroupBox Grid.Row="2" Header="Ignore">
 					<StackPanel>
-						<Button>
+						<Button Command="{Binding IgnoreThisExceptionCommand}">
 							<Button.Content>
 								<TextBlock>
 									<Run Text="{Binding CurrentState.ExceptionType}" /> Exceptions
 								</TextBlock>
 							</Button.Content>
 						</Button>
-						
-						<Button>
+
+						<Button Command="{Binding IgnoreThisFromModuleCommand}">
 							<Button.Content>
 								<TextBlock>
 					This Exception From <Run Text="{Binding CurrentState.ModuleName}" />
 								</TextBlock>
 							</Button.Content>
 						</Button>
-						<Button>
+						<Button Command="{Binding IgnoreAllFromModuleCommand}">
 							<Button.Content>
 								<TextBlock>
 								All From <Run Text="{Binding CurrentState.ModuleName}" />

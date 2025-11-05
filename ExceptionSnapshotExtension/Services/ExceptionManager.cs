@@ -7,6 +7,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.Collections.Generic;
+
 using System.Linq;
 using System.Reactive.Linq;
 using System.Runtime.InteropServices;
@@ -29,11 +30,33 @@ namespace ExceptionSnapshotExtension.Services {
 			}
 		}
 
-
+		/*
+		Can't seem to set items o nthe actual toplevel groups.
+			//we could get the defaults then remove all then restore defaults then load ours but this allows layered loading and the user already has a reset button
+			var dte = Package.GetGlobalService(typeof(DTE)) as EnvDTE80.DTE2;
+			var d  = (EnvDTE90.Debugger3)dte.Debugger;
+		var grps = d?.ExceptionGroups;
+			var itm = grps.Item("CMake Exceptions");
+			foreach (EnvDTE90.ExceptionSettings settings in grps)
+            {
+				System.Diagnostics.Debug.WriteLine(settings.ToString());
+			}
+			TopExceptions = GetExceptions(null, Session);
+			var expTest = TopExceptions.Single(te => te.bstrExceptionName == "CMake Exceptions");
+			var it = ConvertToGeneric(expTest);
+			it.BreakFirstChance = false;
+			it.Conditions = [new() {CallStackBehavior = EXCEPTION_CONDITION_CALLSTACK_BEHAVIOR.TopFrameOnly,
+				Operator=EXCEPTION_CONDITION_OPERATOR.Equals,Type=EXCEPTION_CONDITION_TYPE.ModuleName,Value="myNew.dll" }];
+			expTest = ConvertFromGeneric(it);
+			Marshal.ThrowExceptionForHR( Session.RemoveSetExceptions(new ExceptionInfoEnumerator([expTest])));
+			//expTest.bstrExceptionName=null;
+			SetExceptions([expTest]);
+			return;
+		*/
 
 		public bool SessionAvailable => Session != null;
 
-		EXCEPTION_INFO150[] TopExceptions => field ??= GetExceptions(null, Session);
+		EXCEPTION_INFO150[] TopExceptions { get => field ??= GetExceptions(null, Session); set; }
 
 		#region  public
 
@@ -43,25 +66,32 @@ namespace ExceptionSnapshotExtension.Services {
 
 		public Snapshot GetCurrentExceptionSnapshot() {
 			ThrowIfNoSession();
-
 			var exceptions = TopExceptions.SelectMany(top => GetExceptions(top, Session));
 
-			return new Snapshot {
+			var ret = new Snapshot {
+				CreatedOn = DateTime.Now,
 				Exceptions = exceptions.Select(ConvertToGeneric).ToArray()
 			};
+			return ret;
 		}
 
 		public void RestoreSnapshot(Snapshot snapshot) {
 			ThrowIfNoSession();
+			ThreadHelper.ThrowIfNotOnUIThread();
+			
 
-			RemoveAllSetExceptions();
 
-			var nativeExceptions = snapshot.
-				Exceptions.
-				Select(ex => ConvertFromGeneric(ex));
-			var topExceptions = nativeExceptions.Where(ex => IsExceptionTopException(ex));
+			var nativeExceptions = snapshot.Exceptions.Select(ConvertFromGeneric);
+			var topExceptions = nativeExceptions.Where(ex => IsExceptionTopException(ex)).ToList();
+			if (topExceptions.Any()) {
+				topExceptions.ForEach(exp => exp.bstrExceptionName=null); // clear out the names
 
-			SetExceptions(topExceptions);
+				Session.RemoveSetExceptions(new ExceptionInfoEnumerator(topExceptions));
+				
+				SetExceptions(topExceptions);
+			}
+
+			Session.RemoveSetExceptions(new ExceptionInfoEnumerator(nativeExceptions.Except(topExceptions)));
 			SetExceptions(nativeExceptions.Except(topExceptions));
 		}
 		void SetExceptions(IEnumerable<EXCEPTION_INFO150> exceptions) {
@@ -72,16 +102,16 @@ namespace ExceptionSnapshotExtension.Services {
 		}
 		public bool VerifySnapshot(Snapshot snapshot) {
 			var current = GetCurrentExceptionSnapshot();
-
+			return false;
 			foreach (var ex in snapshot.Exceptions) {
 				var corresponding = current.Exceptions.SingleOrDefault(corEx =>
 				corEx.Name == ex.Name &&
 				corEx.Code == ex.Code &&
 				corEx.GroupName == ex.GroupName);
 
-				if (ex.BreakFirstChance != corresponding.BreakFirstChance) {
+				if (! ex.Equals(corresponding)) 
 					return false;
-				}
+				
 			}
 
 			return true;
@@ -95,10 +125,14 @@ namespace ExceptionSnapshotExtension.Services {
 			return TopExceptions.Any(top => top.bstrExceptionName == exception.bstrExceptionName);
 		}
 
-		void RemoveAllSetExceptions() {
-			Guid guidType = Guid.Empty;
-			Marshal.ThrowExceptionForHR(
-					  InternalDebugger.CurrentSession.RemoveAllSetExceptions(ref guidType));
+		/// <summary>
+		/// resets all exceptions back to default settings
+		/// </summary>
+		public void ResetExceptionsToDefaults() {
+			// while we could implement this why not just have VS do it for us
+			ThreadHelper.ThrowIfNotOnUIThread();
+			var dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+			dte.ExecuteCommand("DebuggerContextMenus.ExceptionSettingsWindow.RestoreDefaults");
 		}
 
 
@@ -111,7 +145,7 @@ namespace ExceptionSnapshotExtension.Services {
 				guidType = TopExceptions.First(ex => ex.bstrExceptionName == exception.GroupName).guidType,
 				dwState = (uint)exception.State,
 				dwCode = exception.Code,
-				pConditions = new ConditionEnumerator(exception.Conditions ?? new Condition[] { })
+				pConditions = new ConditionEnumerator(exception.Conditions ?? [])
 			};
 		}
 
@@ -172,20 +206,30 @@ namespace ExceptionSnapshotExtension.Services {
 				}, session);
 			}
 		}
-		void SetBreakFirstChance(ref EXCEPTION_INFO150 exception, bool breakFirstChance) {
+		/// <summary>
+		/// returns true if changed
+		/// </summary>
+		/// <param name="exception"></param>
+		/// <param name="breakFirstChance"></param>
+		/// <returns></returns>
+		bool SetBreakFirstChance(ref EXCEPTION_INFO150 exception, bool breakFirstChance) {
 			if (breakFirstChance) {
+				if (exception.StateHasFlag(Helpers.EXP_ENABLE_FLAGS))
+					return false;
 				exception.StateAddFlags(Helpers.EXP_ENABLE_FLAGS);
 			} else {
+				if (exception.dwState == 0)
+					return false;
 				exception.StateSet(enum_EXCEPTION_STATE.EXCEPTION_NONE);
 			}
+			return true;
 		}
 		public void DisableAll() {
 			var session = Session;
 			if (session != null) {
-				SetAll((ref EXCEPTION_INFO150 info, out bool changed) => {
-					changed = true;
-					SetBreakFirstChance(ref info, false);
-				}, session);
+				SetAll((ref EXCEPTION_INFO150 info, out bool changed) =>
+					changed = SetBreakFirstChance(ref info, false)
+				, session);
 			}
 		}
 
@@ -217,9 +261,10 @@ namespace ExceptionSnapshotExtension.Services {
 			ThreadHelper.ThrowIfNotOnUIThread();
 			if (subscribed)
 				return;
-			subscribed = true;
 			Marshal.ThrowExceptionForHR(VsDebugger.AdviseDebuggerEvents(this, out AdviseDebuggerEventsCookie));
+			subscribed = true;
 			var dbgMode = new DBGMODE[1];
+			dbgMode[0] = DBGMODE.DBGMODE_Design;
 			OnModeChange(dbgMode[0]);
 
 		}
@@ -227,6 +272,7 @@ namespace ExceptionSnapshotExtension.Services {
 			ThreadHelper.ThrowIfNotOnUIThread();
 			if (!subscribed)
 				return;
+			subscribed = false;
 			if (AdviseDebuggerEventsCookie != 0) {
 				VsDebugger.UnadviseDebuggerEvents(AdviseDebuggerEventsCookie);
 				OnModeChange(DBGMODE.DBGMODE_Design);//to stop it as well
@@ -236,7 +282,7 @@ namespace ExceptionSnapshotExtension.Services {
 		private uint AdviseDebuggerEventsCookie;
 
 
-		private void SetAll(UpdateException action, IDebugSession150 session) {
+		private void SetAll(UpdateException action, IDebugSession150 session, bool removeFirst = false) {
 			var topExceptions = GetExceptions(null, session);
 
 			List<EXCEPTION_INFO150> updated = new List<EXCEPTION_INFO150>();
@@ -248,6 +294,8 @@ namespace ExceptionSnapshotExtension.Services {
 			}
 
 			if (updated.Any()) {
+				if (removeFirst)
+					session.RemoveSetExceptions(new ExceptionInfoEnumerator(updated.ToList()));
 				session.SetExceptions(new ExceptionInfoEnumerator(updated.ToList()));
 				updated.Clear();
 			}
@@ -272,245 +320,293 @@ namespace ExceptionSnapshotExtension.Services {
 
 		private EXCEPTION_INFO150[] GetExceptions(EXCEPTION_INFO150? parent, IDebugSession150 session) {
 			uint num = 0u;
-			EXCEPTION_INFO150[] array = (EXCEPTION_INFO150[])((!parent.HasValue) ? null : new EXCEPTION_INFO150[1]
-			{
-				parent.Value
-			});
-			IEnumDebugExceptionInfo150 val = default(IEnumDebugExceptionInfo150);
+			var val = default(IEnumDebugExceptionInfo150);
 			EXCEPTION_INFO150[] array2;
-			if (session.EnumDefaultExceptions(array, out val) == 0 && val != null) {
-				uint num2 = default(uint);
-				val.GetCount(out num2);
-				array2 = (EXCEPTION_INFO150[])new EXCEPTION_INFO150[num2];
-				val.Next(num2, array2, ref num);
+			//default exceptions returns us all exceptions really we just want changed exceptions
+
+			//if (session.EnumDefaultExceptions(array, out val) == 0 && val != null) {
+			
+			if ( parent.HasValue && session.EnumSetExceptions(parent.Value.guidType, out val) == 0 && val != null) {
+
+			} else if (!parent.HasValue && session.EnumDefaultExceptions(null, out val) == 0 && val != null) {
 			} else {
-				array2 = (EXCEPTION_INFO150[])new EXCEPTION_INFO150[0];
+				return [];
 			}
+
+			uint num2 = default(uint);
+			val.GetCount(out num2);
+			array2 = new EXCEPTION_INFO150[num2];
+			val.Next(num2, array2, ref num);
+		
 			return array2;
 		}
 
-		public static EXCEPTION_INFO Convert(EXCEPTION_INFO150 info) {
-			return new EXCEPTION_INFO {
-				bstrExceptionName = info.bstrExceptionName,
-				bstrProgramName = info.bstrProgramName,
-				dwCode = info.dwCode,
-				dwState = (enum_EXCEPTION_STATE)info.dwState,
-				guidType = info.guidType,
-				pProgram = info.pProgram
-			};
+public static EXCEPTION_INFO Convert(EXCEPTION_INFO150 info) {
+	return new EXCEPTION_INFO {
+		bstrExceptionName = info.bstrExceptionName,
+		bstrProgramName = info.bstrProgramName,
+		dwCode = info.dwCode,
+		dwState = (enum_EXCEPTION_STATE)info.dwState,
+		guidType = info.guidType,
+		pProgram = info.pProgram
+	};
+}
+private enum_FRAMEINFO_FLAGS FrameDetailsWanted =
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME |
+		enum_FRAMEINFO_FLAGS.FIF_RETURNTYPE |
+		enum_FRAMEINFO_FLAGS.FIF_ARGS |
+		enum_FRAMEINFO_FLAGS.FIF_LANGUAGE |
+		enum_FRAMEINFO_FLAGS.FIF_MODULE |
+		enum_FRAMEINFO_FLAGS.FIF_STACKRANGE |
+		enum_FRAMEINFO_FLAGS.FIF_FRAME |
+		enum_FRAMEINFO_FLAGS.FIF_DEBUGINFO |
+		enum_FRAMEINFO_FLAGS.FIF_STALECODE |
+		enum_FRAMEINFO_FLAGS.FIF_DEBUG_MODULEP |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_FORMAT |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_RETURNTYPE |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_ARGS |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_LANGUAGE |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_MODULE |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_LINES |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_OFFSET |
+		enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_ARGS_ALL |
+		enum_FRAMEINFO_FLAGS.FIF_ARGS_ALL;
+
+
+private void GetCallstack(IDebugThread2 pThread) {
+	var props = new THREADPROPERTIES[1];
+	pThread.GetThreadProperties(enum_THREADPROPERTY_FIELDS.TPF_ALLFIELDS, props);
+
+	MsgLog($"%%PRIMARY%% Frame prop {props[0].bstrLocation} -- name: {props[0].bstrName} -- {props[0].dwFields}");
+	//IDebugThread2::EnumFrameInfo 
+	IEnumDebugFrameInfo2 frame;
+	pThread.EnumFrameInfo(FrameDetailsWanted, 0, out frame);
+	uint frames;
+	frame.GetCount(out frames);
+	var frameInfo = new FRAMEINFO[1];
+	uint pceltFetched = 0;
+	while (frame.Next(1, frameInfo, ref pceltFetched) == VSConstants.S_OK && pceltFetched > 0) {
+		var fr = frameInfo[0].m_pFrame as IDebugStackFrame3;
+		var modInfo = frameInfo[0].m_pModule as IDebugModule2; //would then request the info we want from it
+		MsgLog($"\tFrame Func: {frameInfo[0].m_bstrFuncName} module: {frameInfo[0].m_bstrModule}  ");
+		continue;
+
+		IDebugExpressionContext2 expressionContext;
+		fr.GetExpressionContext(out expressionContext);
+		IDebugExpression2 de; string error; uint errorCode;
+		if (expressionContext != null) {
+			expressionContext.ParseText("exception.InnerException.StackTrace", enum_PARSEFLAGS.PARSE_EXPRESSION, 0, out de, out error, out errorCode);
+			IDebugProperty2 dp2;
+			var res = de.EvaluateSync(enum_EVALFLAGS.EVAL_RETURNVALUE, 5000, null, out dp2);
+
+			var myInfo = new DEBUG_PROPERTY_INFO[1];
+			dp2.GetPropertyInfo(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL, 0, 5000, null, 0, myInfo);
+			var stackTrace = myInfo[0].bstrValue;
+
+			IDebugProperty2 dp;
+			fr.GetDebugProperty(out dp);
+			IEnumDebugPropertyInfo2 prop;
+			//dp.EnumChildren(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL, 0, ref DebugFilterGuids.guidFilterAllLocals,
+			//    enum_DBG_ATTRIB_FLAGS.DBG_ATTRIB_ACCESS_ALL,
+			///*(uint)enum_DBGPROP_ATTRIB_FLAGS.DBGPROP_ATTRIB_ACCESS_PUBLIC,*/
+			//null, 5000, out prop);
+
+			EnumerateDebugPropertyChildren(prop);
 		}
-		private enum_FRAMEINFO_FLAGS FrameDetailsWanted =
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME |
-				enum_FRAMEINFO_FLAGS.FIF_RETURNTYPE |
-				enum_FRAMEINFO_FLAGS.FIF_ARGS |
-				enum_FRAMEINFO_FLAGS.FIF_LANGUAGE |
-				enum_FRAMEINFO_FLAGS.FIF_MODULE |
-				enum_FRAMEINFO_FLAGS.FIF_STACKRANGE |
-				enum_FRAMEINFO_FLAGS.FIF_FRAME |
-				enum_FRAMEINFO_FLAGS.FIF_DEBUGINFO |
-				enum_FRAMEINFO_FLAGS.FIF_STALECODE |
-				enum_FRAMEINFO_FLAGS.FIF_DEBUG_MODULEP |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_FORMAT |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_RETURNTYPE |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_ARGS |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_LANGUAGE |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_MODULE |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_LINES |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_OFFSET |
-				enum_FRAMEINFO_FLAGS.FIF_FUNCNAME_ARGS_ALL |
-				enum_FRAMEINFO_FLAGS.FIF_ARGS_ALL;
+		//Guid filter = dbgGuids.guidFilterAllLocals; uint pElements; IEnumDebugPropertyInfo2 prop;
+		//fr.EnumProperties(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL, 0, ref filter, 5000, out pElements, out prop);
 
+		//fr.GetUnwindCodeContext
 
-		private void GetCallstack(IDebugThread2 pThread) {
-			var props = new THREADPROPERTIES[1];
-			pThread.GetThreadProperties(enum_THREADPROPERTY_FIELDS.TPF_ALLFIELDS, props);
+		//fr.EnumProperties(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL);
+		//fr.GetUnwindCodeContext
+		//ulong intCookie;
+		//fr.InterceptCurrentException(enum_INTERCEPT_EXCEPTION_ACTION.IEA_INTERCEPT, out intCookie);
+		//fr.GetExpressionContext(
+		//var s = fr.ToString();
+	}
+}
 
-			MsgLog($"%%PRIMARY%% Frame prop {props[0].bstrLocation} -- name: {props[0].bstrName} -- {props[0].dwFields}");
-			//IDebugThread2::EnumFrameInfo 
-			IEnumDebugFrameInfo2 frame;
-			pThread.EnumFrameInfo(FrameDetailsWanted, 0, out frame);
-			uint frames;
-			frame.GetCount(out frames);
-			var frameInfo = new FRAMEINFO[1];
-			uint pceltFetched = 0;
-			while (frame.Next(1, frameInfo, ref pceltFetched) == VSConstants.S_OK && pceltFetched > 0) {
-				var fr = frameInfo[0].m_pFrame as IDebugStackFrame3;
-				var modInfo = frameInfo[0].m_pModule as IDebugModule2; //would then request the info we want from it
-				MsgLog($"\tFrame Func: {frameInfo[0].m_bstrFuncName} module: {frameInfo[0].m_bstrModule}  ");
-				continue;
+private static void EnumerateDebugPropertyChildren(IEnumDebugPropertyInfo2 prop) {
+	uint numChildren = 0;
+	prop.GetCount(out numChildren);
+	var count = numChildren;
+	while (count > 0) {
+		var xxx = new DEBUG_PROPERTY_INFO[1];
+		uint xxx_fetched = 0;
+		prop.Next(1, xxx, out xxx_fetched);
+		if (xxx_fetched == 0)
+			break;
+		MsgLog(xxx[0].bstrName + ":" + xxx[0].bstrType + ":" + xxx[0].bstrValue);
 
-				IDebugExpressionContext2 expressionContext;
-				fr.GetExpressionContext(out expressionContext);
-				IDebugExpression2 de; string error; uint errorCode;
-				if (expressionContext != null) {
-					expressionContext.ParseText("exception.InnerException.StackTrace", enum_PARSEFLAGS.PARSE_EXPRESSION, 0, out de, out error, out errorCode);
-					IDebugProperty2 dp2;
-					var res = de.EvaluateSync(enum_EVALFLAGS.EVAL_RETURNVALUE, 5000, null, out dp2);
+		count--;
+	}
+}
 
-					var myInfo = new DEBUG_PROPERTY_INFO[1];
-					dp2.GetPropertyInfo(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL, 0, 5000, null, 0, myInfo);
-					var stackTrace = myInfo[0].bstrValue;
-
-					IDebugProperty2 dp;
-					fr.GetDebugProperty(out dp);
-					IEnumDebugPropertyInfo2 prop;
-					//dp.EnumChildren(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL, 0, ref DebugFilterGuids.guidFilterAllLocals,
-					//    enum_DBG_ATTRIB_FLAGS.DBG_ATTRIB_ACCESS_ALL,
-					///*(uint)enum_DBGPROP_ATTRIB_FLAGS.DBGPROP_ATTRIB_ACCESS_PUBLIC,*/
-					//null, 5000, out prop);
-
-					EnumerateDebugPropertyChildren(prop);
-				}
-				//Guid filter = dbgGuids.guidFilterAllLocals; uint pElements; IEnumDebugPropertyInfo2 prop;
-				//fr.EnumProperties(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL, 0, ref filter, 5000, out pElements, out prop);
-
-				//fr.GetUnwindCodeContext
-
-				//fr.EnumProperties(enum_DEBUGPROP_INFO_FLAGS.DEBUGPROP_INFO_ALL);
-				//fr.GetUnwindCodeContext
-				//ulong intCookie;
-				//fr.InterceptCurrentException(enum_INTERCEPT_EXCEPTION_ACTION.IEA_INTERCEPT, out intCookie);
-				//fr.GetExpressionContext(
-				//var s = fr.ToString();
-			}
-		}
-
-		private static void EnumerateDebugPropertyChildren(IEnumDebugPropertyInfo2 prop) {
-			uint numChildren = 0;
-			prop.GetCount(out numChildren);
-			var count = numChildren;
-			while (count > 0) {
-				var xxx = new DEBUG_PROPERTY_INFO[1];
-				uint xxx_fetched = 0;
-				prop.Next(1, xxx, out xxx_fetched);
-				if (xxx_fetched == 0)
-					break;
-				MsgLog(xxx[0].bstrName + ":" + xxx[0].bstrType + ":" + xxx[0].bstrValue);
-
-				count--;
-			}
-		}
-
-		Regex ExceptionDescExtraInfo = new(@" in (?<module>.+)\n(?<descRest>.+)", RegexOptions.Singleline | RegexOptions.Compiled);
-		public int Event(IDebugEngine2 pEngine, IDebugProcess2 pProcess, IDebugProgram2 pProgram, IDebugThread2 pThread, IDebugEvent2 pEvent, ref Guid riidEvent, uint dwAttrib) {
-			// 51a94113-8788-4a54-ae15-08b74ff922d0 IDebugExceptionEvent2 IDebugExceptionEvent150 AD7StoppingEvent
-			try {
-				if (riidEvent == typeof(IDebugExceptionEvent2).GUID
-					) {
-					IDebugExceptionEvent2 ev = pEvent as IDebugExceptionEvent2;
-					if (ev != null) {
-						var info = new EXCEPTION_INFO[1];
-						var arg = new DebuggerExceptionEventArgs();
-						ev.GetExceptionDescription(out arg.description);
-						ev.GetException(info);
-						arg.exceptionType = info[0].bstrExceptionName;
-						arg.reason = info[0].dwState;
-						if (arg.description != null) {
-							var match = ExceptionDescExtraInfo.Match(arg.description);
-							if (match.Success) {
-								arg.moduleName = match.Groups["module"]?.Value?.Trim();
-								arg.description = match.Groups["descRest"]?.Value?.Trim();
-							}
-						}
-						// guid here is the language for it prolly CLR/C++/etc.
-						// name is the full exception type like: "System.Net.Sockets.SocketException" guid is unrelated here
-						//state == enum_EXCEPTION_STATE.EXCEPTION_STOP_SECOND_CHANCE
-						MsgLog($"#@# NEW EXCEPTION: {arg}");
-						this.DebuggerException?.Invoke(this, arg);
-						// while we can easily get the thread and stack info the module the UI attributes the exception to is best parsed from {desc} here as it is not always the first frame enor the primary thread info module.
-						//GetCallstack(pThread);
+Regex ExceptionDescExtraInfo = new(@" in (?<module>.+)\n(?<descRest>.+)", RegexOptions.Singleline | RegexOptions.Compiled);
+public int Event(IDebugEngine2 pEngine, IDebugProcess2 pProcess, IDebugProgram2 pProgram, IDebugThread2 pThread, IDebugEvent2 pEvent, ref Guid riidEvent, uint dwAttrib) {
+	// 51a94113-8788-4a54-ae15-08b74ff922d0 IDebugExceptionEvent2 IDebugExceptionEvent150 AD7StoppingEvent
+	try {
+		if (riidEvent == typeof(IDebugExceptionEvent2).GUID
+			) {
+			IDebugExceptionEvent2 ev = pEvent as IDebugExceptionEvent2;
+			if (ev != null) {
+				var info = new EXCEPTION_INFO[1];
+				var arg = new DebuggerExceptionEventArgs();
+				ev.GetExceptionDescription(out arg.description);
+				ev.GetException(info);
+				arg.exceptionType = info[0].bstrExceptionName;
+				arg.reason = info[0].dwState;
+				if (arg.description != null) {
+					var match = ExceptionDescExtraInfo.Match(arg.description);
+					if (match.Success) {
+						arg.moduleName = match.Groups["module"]?.Value?.Trim();
+						arg.description = match.Groups["descRest"]?.Value?.Trim();
 					}
 				}
-				return 0;
-				if (typeof(IDebugExceptionEvent2).GUID == riidEvent) {
-					//var e2 = pEvent as IDebugExceptionEvent2;
-					//var e = pEvent as IDebugExceptionEvent150;
-					//var cp = e2.CanPassToDebuggee();
-					//EXCEPTION_INFO150 info = new EXCEPTION_INFO150();
-					//var arr = new EXCEPTION_INFO150[] { info };
-					//var res = e.GetException(arr);
-					//res = e2.PassToDebuggee(1);
-
-					//e.GetExceptionDetails(out IDebugExceptionDetails details);
-					//details.GetTypeName(1, out string typeName);
-					//details.GetSource(out string sourceName);
-
-					//var engine150 = pEngine as IDebugEngine150;
-
-
-					var session = Session;
-					MsgLog("IDebugExceptionEvent2");
-					//var topExceptions = GetExceptions(null, session);
-
-					//List<EXCEPTION_INFO150> updated = new List<EXCEPTION_INFO150>();
-					//List<EXCEPTION_INFO150> allChildren = new List<EXCEPTION_INFO150>();
-					//foreach (var topException in topExceptions)
-					//{
-					//    var childExceptions = GetExceptions(topException, session);
-					//    for (int i = 0; i < childExceptions.Count(); i++)
-					//    {
-					//        childExceptions[i].dwState &= 4294967278u;
-					//        updated.Add(childExceptions[i]);
-
-					//        if (childExceptions[i].bstrExceptionName == typeName.Trim('\"'))
-					//        {
-					//            pEngine.SetException(new EXCEPTION_INFO[] { Convert(childExceptions[i]) });
-					//        }
-					//    }
-					//    allChildren.AddRange(childExceptions);
-					//}
-
-					//if (updated.Any())
-					//{
-					//    engine150.SetExceptions(new ExceptionInfoEnumerator(updated.ToList()));
-					//}
-				} else if (Guid.Parse("04bcb310-5e1a-469c-87c6-4971e6c8483a") == riidEvent) {
-					MsgLog("Try 1");
-					//var ex = new ExceptionManager2017().GetCurrentExceptionType();
-					//if (ex != null)
-					//{
-					//pProgram.Continue(pThread);
-					//}
-				} else {
-					MsgLog(riidEvent.ToString());
-				}
-			} catch {
-
-			} finally {
-				if (pEngine != null) Marshal.ReleaseComObject(pEngine);
-				if (pProcess != null) Marshal.ReleaseComObject(pProcess);
-				if (pProgram != null) Marshal.ReleaseComObject(pProgram);
-				if (pThread != null) Marshal.ReleaseComObject(pThread);
-				if (pEvent != null) Marshal.ReleaseComObject(pEvent);
+				// guid here is the language for it prolly CLR/C++/etc.
+				// name is the full exception type like: "System.Net.Sockets.SocketException" guid is unrelated here
+				//state == enum_EXCEPTION_STATE.EXCEPTION_STOP_SECOND_CHANCE
+				MsgLog($"#@# NEW EXCEPTION: {arg}");
+				this.DebuggerException?.Invoke(this, arg);
+				// while we can easily get the thread and stack info the module the UI attributes the exception to is best parsed from {desc} here as it is not always the first frame enor the primary thread info module.
+				//GetCallstack(pThread);
 			}
-			return 0;
 		}
-		private bool isListening;
+		return 0;
+		if (typeof(IDebugExceptionEvent2).GUID == riidEvent) {
+			//var e2 = pEvent as IDebugExceptionEvent2;
+			//var e = pEvent as IDebugExceptionEvent150;
+			//var cp = e2.CanPassToDebuggee();
+			//EXCEPTION_INFO150 info = new EXCEPTION_INFO150();
+			//var arr = new EXCEPTION_INFO150[] { info };
+			//var res = e.GetException(arr);
+			//res = e2.PassToDebuggee(1);
+
+			//e.GetExceptionDetails(out IDebugExceptionDetails details);
+			//details.GetTypeName(1, out string typeName);
+			//details.GetSource(out string sourceName);
+
+			//var engine150 = pEngine as IDebugEngine150;
 
 
-		public int OnModeChange(DBGMODE dbgmodeNew) {
-			MsgLog($"Debug Mode Change: {dbgmodeNew}");
-			DebuggerStatusChanged?.Invoke(this, dbgmodeNew);
-			ThreadHelper.ThrowIfNotOnUIThread();
-			if (dbgmodeNew == DBGMODE.DBGMODE_Design && isListening) {
-				var res2 = VsDebugger.UnadviseDebugEventCallback(this);
-				isListening = false;
-			} else if (!isListening && new DBGMODE[] { DBGMODE.DBGMODE_Run, DBGMODE.DBGMODE_Break }.Contains(dbgmodeNew)) {
-				var _debuggerPackage = (IVsDebugger)Package.GetGlobalService(typeof(IVsDebugger));
-				Marshal.ThrowExceptionForHR(_debuggerPackage.AdviseDebugEventCallback(this));
+			var session = Session;
+			MsgLog("IDebugExceptionEvent2");
+			//var topExceptions = GetExceptions(null, session);
 
-				isListening = true;
-			}
+			//List<EXCEPTION_INFO150> updated = new List<EXCEPTION_INFO150>();
+			//List<EXCEPTION_INFO150> allChildren = new List<EXCEPTION_INFO150>();
+			//foreach (var topException in topExceptions)
+			//{
+			//    var childExceptions = GetExceptions(topException, session);
+			//    for (int i = 0; i < childExceptions.Count(); i++)
+			//    {
+			//        childExceptions[i].dwState &= 4294967278u;
+			//        updated.Add(childExceptions[i]);
 
-			// Going to run mode
+			//        if (childExceptions[i].bstrExceptionName == typeName.Trim('\"'))
+			//        {
+			//            pEngine.SetException(new EXCEPTION_INFO[] { Convert(childExceptions[i]) });
+			//        }
+			//    }
+			//    allChildren.AddRange(childExceptions);
+			//}
 
-			return VSConstants.S_OK;
+			//if (updated.Any())
+			//{
+			//    engine150.SetExceptions(new ExceptionInfoEnumerator(updated.ToList()));
+			//}
+		} else if (Guid.Parse("04bcb310-5e1a-469c-87c6-4971e6c8483a") == riidEvent) {
+			MsgLog("Try 1");
+			//var ex = new ExceptionManager2017().GetCurrentExceptionType();
+			//if (ex != null)
+			//{
+			//pProgram.Continue(pThread);
+			//}
+		} else {
+			MsgLog(riidEvent.ToString());
 		}
+	} catch {
 
-		private static void MsgLog(string msg) {
-			System.Diagnostics.Debug.WriteLine("ESE: " + msg);
+	} finally {
+		if (pEngine != null) Marshal.ReleaseComObject(pEngine);
+		if (pProcess != null) Marshal.ReleaseComObject(pProcess);
+		if (pProgram != null) Marshal.ReleaseComObject(pProgram);
+		if (pThread != null) Marshal.ReleaseComObject(pThread);
+		if (pEvent != null) Marshal.ReleaseComObject(pEvent);
+	}
+	return 0;
+}
+private bool isListening;
+
+protected DBGMODE LastMode;
+public int OnModeChange(DBGMODE dbgmodeNew) {
+	LastMode = dbgmodeNew;
+	MsgLog($"Debug Mode Change: {dbgmodeNew}");
+	DebuggerStatusChanged?.Invoke(this, dbgmodeNew);
+	ThreadHelper.ThrowIfNotOnUIThread();
+	if (dbgmodeNew == DBGMODE.DBGMODE_Design && isListening) {
+		var res2 = VsDebugger.UnadviseDebugEventCallback(this);
+		isListening = false;
+	} else if (!isListening && new DBGMODE[] { DBGMODE.DBGMODE_Run, DBGMODE.DBGMODE_Break }.Contains(dbgmodeNew)) {
+		var _debuggerPackage = (IVsDebugger)Package.GetGlobalService(typeof(IVsDebugger));
+		Marshal.ThrowExceptionForHR(_debuggerPackage.AdviseDebugEventCallback(this));
+
+		isListening = true;
+	}
+
+	// Going to run mode
+
+	return VSConstants.S_OK;
+}
+
+private static void MsgLog(string msg) {
+	System.Diagnostics.Debug.WriteLine("ESE: " + msg);
+}
+
+public void ResumeDebugging() {
+	ThreadHelper.ThrowIfNotOnUIThread();
+	if (LastMode == DBGMODE.DBGMODE_Break) {
+		return;
+		Debugger.Go(false);
+	}
+}
+
+public void SetBreakOnException(string exceptionType, bool breakEnabled) {
+	// Todo if exception type not present need to add....
+
+	SetAll((ref EXCEPTION_INFO150 info, out bool changed) => {
+		if (info.bstrExceptionName == exceptionType)
+			changed = SetBreakFirstChance(ref info, breakEnabled);
+		else
+			changed = false;
+
+	}, Session, true);
+}
+
+public void ExcludeModuleFromExceptions(string moduleName, string exceptionType = null) {
+	var condition = new Condition {
+		Type = EXCEPTION_CONDITION_TYPE.ModuleName,
+		Operator = EXCEPTION_CONDITION_OPERATOR.NotEquals,
+		Value = moduleName,
+		CallStackBehavior = EXCEPTION_CONDITION_CALLSTACK_BEHAVIOR.TopFrameOnly
+	};
+	SetAll((ref EXCEPTION_INFO150 info, out bool changed) => {
+		if (info.bstrExceptionName == exceptionType) {
+			var conv = ConvertToGeneric(info);
+			var conditions = conv.Conditions.ToList();
+			conditions.RemoveAll(c => c.Value == moduleName);
+			conditions.Add(condition);
+			conv.Conditions = conditions.ToArray();
+			conv.State = Helpers.EXP_ENABLE_FLAGS; // oddly info.State before this is helpers.EXP_CONDITION_FLAGS so we need to re-enable it but not sure why
+			info = ConvertFromGeneric(conv);
+
+			changed = true;
+		} else {
+			changed = false;
 		}
+	}, Session, true);
 
-
+}
 	}
 }

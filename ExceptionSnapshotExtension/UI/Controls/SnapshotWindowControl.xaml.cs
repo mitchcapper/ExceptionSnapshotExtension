@@ -40,8 +40,8 @@ namespace ExceptionSnapshotExtension {
 					remainingSpace -= (listView.View as GridView).Columns[i].ActualWidth;
 				}
 			}
-
-			(listView.View as GridView).Columns[autoFillColumnIndex].Width = remainingSpace >= 0 ? remainingSpace - 10 : 0;
+			remainingSpace-= 10;// avoid scrollbar on slight overflow prolly padding related
+			(listView.View as GridView).Columns[autoFillColumnIndex].Width = remainingSpace >= 0 ? remainingSpace : 0;
 		}
 	}
 }

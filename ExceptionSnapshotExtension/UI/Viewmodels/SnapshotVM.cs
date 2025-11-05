@@ -1,4 +1,5 @@
 using ExceptionSnapshotExtension.Model;
+using System;
 using System.Collections.ObjectModel;
 
 namespace ExceptionSnapshotExtension.Viewmodels {
@@ -8,6 +9,7 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 		public ObservableCollection<GroupVM> Groups { get; set; }
 
 		public string Name => m_Snapshot.Name;
+		public DateTime CreatedOn => m_Snapshot.CreatedOn;
 		public bool Break { get => true; set { } }
 		public Snapshot Snapshot => m_Snapshot;
 
