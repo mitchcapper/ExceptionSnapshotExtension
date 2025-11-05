@@ -16,6 +16,9 @@
              Name="MyToolWindow">
 	<UserControl.Resources>
 		<!-- TextBox Style -->
+		<!-- Converters -->
+		<Ctr:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
 		<Style TargetType="{x:Type TextBox}">
 			<Setter Property="Foreground" Value="{DynamicResource {x:Static vsshell:VsBrushes.SortTextKey}}"/>
 			<Setter Property="Background" Value="{DynamicResource {x:Static vsshell:VsBrushes.SortBackgroundKey}}"/>
@@ -157,10 +160,10 @@
 					<Button Grid.Row="0" Grid.Column="2"
                             Content="Save"
                             Command="{Binding SaveSnapshotCommand}"/>
-
+					<!--ScrollViewer.HorizontalScrollBarVisibility="Hidden"-->
 					<ListView
                 Grid.Row="1" d:Height="100"
-				Grid.ColumnSpan="3" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+				Grid.ColumnSpan="3"
 	VerticalAlignment="Top"
 						Margin="0,5,0,0"
                 ItemsSource="{Binding SnapshotVms}"
@@ -252,29 +255,59 @@
 				<!-- Saved Snapshots List -->
 			</GroupBox>
 		</Grid>
-		<GroupBox Header="Current Exception" Grid.Row="1">
+		<GroupBox Grid.Row="1" Visibility="{Binding CurrentState.IsExceptionActive, Converter={StaticResource BoolToVis}}">
+			<GroupBox.Header>
+				<TextBlock>
+					Current Exception (<Run Text="{Binding CurrentState.Description}"/>)
+				</TextBlock>
+			</GroupBox.Header>
 			<Grid>
 				<Grid.RowDefinitions>
 					<RowDefinition Height="Auto"/>
 					<RowDefinition Height="Auto"/>
 				</Grid.RowDefinitions>
-
+					<RowDefinition Height="Auto"/>
+				<TextBlock>
+					<Run Text="{Binding CurrentState.ExceptionType}"/> in
+					<Run Text="{Binding CurrentState.ModuleName}"/>
+				</TextBlock>
 				<!-- Skip Button and Auto Skip -->
-				<StackPanel Grid.Row="0" Orientation="Horizontal">
-					<Button Content="Skip This Exception"
+				<StackPanel Grid.Row="1" Orientation="Horizontal">
+					<Button Content="Skip This Exception" HorizontalAlignment="Left"
                             Command="{Binding GoCommand}"
                             MinWidth="140"/>
-					<CheckBox Content="Auto Skip"
-                              IsChecked="{Binding AutoSkip}"/>
+					<!--<CheckBox Content="Auto Skip"
+                              IsChecked="{Binding AutoSkip}"/>-->
 				</StackPanel>
 
 				<!-- Ignore List Options -->
-				<GroupBox Grid.Row="1" Header="Exception Filtering">
+				<GroupBox Grid.Row="2" Header="Ignore">
 					<StackPanel>
-						<CheckBox Content="Add to Ignore List"
-                                  IsChecked="{Binding AddToIgnoreList}"/>
-						<CheckBox Content="Ignore by Module"
-                                  IsChecked="{Binding RespectModuleName}"/>
+						<Button>
+							<Button.Content>
+								<TextBlock>
+									<Run Text="{Binding CurrentState.ExceptionType}" /> Exceptions
+								</TextBlock>
+							</Button.Content>
+						</Button>
+						
+						<Button>
+							<Button.Content>
+								<TextBlock>
+					This Exception From <Run Text="{Binding CurrentState.ModuleName}" />
+								</TextBlock>
+							</Button.Content>
+						</Button>
+						<Button>
+							<Button.Content>
+								<TextBlock>
+								All From <Run Text="{Binding CurrentState.ModuleName}" />
+								</TextBlock>
+							</Button.Content>
+						</Button>
+
+
+
 					</StackPanel>
 				</GroupBox>
 			</Grid>

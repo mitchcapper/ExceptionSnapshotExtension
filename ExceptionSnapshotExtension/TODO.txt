@@ -1,11 +1,7 @@
-﻿DONE -  1 Context menu to delete saved snapshots
-2 Tree view with columns
-DONE 3 Test to make sure restore operation is accurate for multiple different snapshots 
-4 support VS 2015
-5 Import/Export snapshots
-6 Add option to save snapshots per machine/user versus per solution
-DONE 7 Support VS dark style on all controls
-8 Make sure modules are saved/restored 
+- Tree view with columns
+- Import/Export snapshots
+- Add option to save snapshots per machine/user versus per solution
+- Make sure modules are saved/restored 
 
 
 

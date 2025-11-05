@@ -1,4 +1,4 @@
-﻿using ExceptionSnapshotExtension.Services;
+using ExceptionSnapshotExtension.Services;
 using Microsoft.VisualStudio.Debugger.Interop;
 using Newtonsoft.Json;
 using System;
@@ -13,7 +13,7 @@ namespace ExceptionSnapshotExtension.Model
     {
         public string Name { get; }
         public string GroupName { get; }
-        public uint State { get; set; }
+        public enum_EXCEPTION_STATE State { get; set; }
         public uint Code { get; set; }
 
         [JsonIgnore]
@@ -21,22 +21,19 @@ namespace ExceptionSnapshotExtension.Model
         {
             get
             {
-                return Constants.SetToBreakFirstChance(State);
+                return State.HasFlag(Helpers.EXP_ENABLE_FLAGS);
             }
             set
             {
-                uint state = State;
-
                 if (value)
                 {
-                    Constants.EnableException(ref state);
+                    State |= Helpers.EXP_ENABLE_FLAGS;
                 }
                 else
                 {
-                    Constants.DisableException(ref state);
+                    State = enum_EXCEPTION_STATE.EXCEPTION_NONE;
                 }
 
-                State = state;
             }
         }
 

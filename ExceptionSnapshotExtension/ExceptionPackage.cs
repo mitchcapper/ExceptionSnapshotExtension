@@ -1,4 +1,4 @@
-﻿using ExceptionSnapshotExtension.Model;
+using ExceptionSnapshotExtension.Model;
 using ExceptionSnapshotExtension.Services;
 using ExceptionSnapshotExtension.Viewmodels;
 using Microsoft.VisualStudio;
@@ -68,7 +68,7 @@ namespace ExceptionSnapshotExtension
             this.AddOptionKey(SETTINGS_KEY);
             m_SnapshotSerializer = new JsonSerialize();
 
-            m_ExceptionManager = new Manager2017();
+            m_ExceptionManager = new ExceptionManager();
 
             MasterViewModel = new ToolWindowVM(m_ExceptionManager);
         }

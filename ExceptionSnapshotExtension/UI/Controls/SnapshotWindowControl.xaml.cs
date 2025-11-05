@@ -1,7 +1,8 @@
-﻿using EnvDTE;
+using EnvDTE;
 using EnvDTE100;
 using EnvDTE80;
 using EnvDTE90;
+using ExceptionSnapshotExtension.Model;
 using ExceptionSnapshotExtension.Services;
 using ExceptionSnapshotExtension.Viewmodels;
 using Microsoft.VisualStudio.Shell;
@@ -27,7 +28,10 @@ namespace ExceptionSnapshotExtension
             this.InitializeComponent();
             Dispatcher.VerifyAccess();
             this.DataContext = ExceptionPackage.MasterViewModel;
+			Loaded += (_,_) => vm.WindowLoaded();
+			Unloaded += (_,_) => vm.WindowUnloaded();
         }
+		internal ToolWindowVM vm => DataContext as ToolWindowVM;
 
         private void ListView_Loaded(object sender, RoutedEventArgs e)
         {
@@ -56,7 +60,7 @@ namespace ExceptionSnapshotExtension
                 }
             }
 
-            (listView.View as GridView).Columns[autoFillColumnIndex].Width = remainingSpace >= 0 ? remainingSpace : 0;
+            (listView.View as GridView).Columns[autoFillColumnIndex].Width = remainingSpace >= 0 ? remainingSpace - 10 : 0;
         }
     }
 }
