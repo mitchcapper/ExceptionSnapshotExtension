@@ -1,4 +1,5 @@
 using ExceptionSnapshotExtension.Model;
+using ExceptionSnapshotExtension.Services;
 using Microsoft.VisualStudio.Debugger.Interop;
 using Microsoft.VisualStudio.Shell.Interop;
 using System;
@@ -14,6 +15,7 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 
 
 		private readonly IExceptionManager m_ExceptionManager;
+		private readonly DebugManager m_DebugManager = DebugManager.Instance;
 
 
 
@@ -58,7 +60,7 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 			System.Diagnostics.Debug.WriteLine($"Exception in ToolWindowVM Command: {ex}");
 		}
 
-		public RelayCommand GoCommand => field ??= new RelayCommand(p => true, p => m_ExceptionManager.ResumeDebugging());
+		public RelayCommand GoCommand => field ??= new RelayCommand(p => true, p => m_DebugManager.ResumeDebugging());
 
 		public RelayCommand EnableAllCommand => field ??= new RelayCommand(p => true, p => m_ExceptionManager.EnableAll());
 
@@ -171,17 +173,17 @@ namespace ExceptionSnapshotExtension.Viewmodels {
 		internal void WindowLoaded() {
 			if (!SettingsManager.TrackEvents)
 				return;
-			m_ExceptionManager.AttachEventsListener();
-			m_ExceptionManager.DebuggerStatusChanged += DebugStatusChanged;
-			m_ExceptionManager.DebuggerException += DebuggerException;
+			m_DebugManager.AttachEventsListener();
+			m_DebugManager.DebuggerStatusChanged += DebugStatusChanged;
+			m_DebugManager.DebuggerException += DebuggerException;
 		}
 
 		internal void WindowUnloaded() {
 			if (!SettingsManager.TrackEvents)
 				return;
-			m_ExceptionManager.DetachEventsListener();
-			m_ExceptionManager.DebuggerStatusChanged -= DebugStatusChanged;
-			m_ExceptionManager.DebuggerException -= DebuggerException;
+			m_DebugManager.DetachEventsListener();
+			m_DebugManager.DebuggerStatusChanged -= DebugStatusChanged;
+			m_DebugManager.DebuggerException -= DebuggerException;
 		}
 		public State CurrentState {
 			get; set => SetProperty(ref field, value);
