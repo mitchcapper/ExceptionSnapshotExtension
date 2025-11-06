@@ -1,3 +1,6 @@
+- Context menu for snapshots
+- Figure out how to set the root exception category conditions. In theory as it ends up right now on the "all other categories" node at least it is functionally the same just visually slightly different for the user.
+- Options page? Use extensibility style.
 - Tree view with columns
 - Import/Export snapshots
 - Add option to save snapshots per machine/user versus per solution

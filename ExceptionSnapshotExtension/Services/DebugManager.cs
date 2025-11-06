@@ -23,6 +23,8 @@ namespace ExceptionSnapshotExtension.Services {
 		public override string ToString() => $"{exceptionType} thrown in {moduleName} break of: {reason} error: {description}";
 	}
 	internal class DebugManager : IDebugEventCallback2, IVsDebuggerEvents {
+		// we could look at moving to dte2 events if we wanted and get much the same info we need ie: dte2.Events.DebuggerEvents.OnExceptionThrown += OnException;
+
 		//void AttachEventsListener();
 		//void DetachEventsListener();
 		//event EventHandler<DebuggerExceptionEventArgs> DebuggerException;
@@ -303,9 +305,13 @@ namespace ExceptionSnapshotExtension.Services {
 			get {
 				ThreadHelper.ThrowIfNotOnUIThread();
 				var dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+				//var dte2 = dte as EnvDTE80.DTE2;
+				//dte2.Events.DebuggerEvents.OnExceptionThrown += OnException;
+				//dte2.Debugger.RunToCursor
 				return dte.Debugger as Debugger;
 			}
 		}
+
 
 		private IDebugSession150 Session {
 			get {

@@ -1,6 +1,7 @@
 using ExceptionSnapshotExtension.Model;
 using ExceptionSnapshotExtension.Services;
 using ExceptionSnapshotExtension.Viewmodels;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using System;
@@ -34,7 +35,9 @@ namespace ExceptionSnapshotExtension {
 	[Guid(ExceptionPackage.PackageGuidString)]
 	[SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "pkgdef, VS and vsixmanifest are valid VS terms")]
 	[ProvideMenuResource("Menus.ctmenu", 1)]
-	[ProvideToolWindow(typeof(SnapshotWindow))]
+	//[ProvideToolWindow(typeof(SnapshotWindow))]
+	[ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExistsAndFullyLoaded_string, PackageAutoLoadFlags.BackgroundLoad)]
+	[ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
 	public sealed class ExceptionPackage : AsyncPackage {
 		/// <summary>
 		/// ExceptionPackage GUID string.
@@ -78,7 +81,7 @@ namespace ExceptionSnapshotExtension {
 			// When initialized asynchronously, the current thread may be a background thread at this point.
 			// Do any initialization that requires the UI thread after switching to the UI thread.
 			await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-			await SnapshotWindowCommand.InitializeAsync(this);
+			//await SnapshotWindowCommand.InitializeAsync(this);
 		}
 
 		protected override async void OnSaveOptions(string key, Stream stream) {

@@ -30,6 +30,7 @@ namespace ExceptionSnapshotExtension {
 
 		private void UpdateColumnsWidth(ListView listView) {
 			int autoFillColumnIndex = (listView.View as GridView).Columns.Count - 1;
+			autoFillColumnIndex = 1;
 			if (listView.ActualWidth == Double.NaN) {
 				listView.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
 			}

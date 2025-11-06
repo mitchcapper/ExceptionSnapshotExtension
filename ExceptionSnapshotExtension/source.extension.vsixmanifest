@@ -7,7 +7,7 @@
         <MoreInfo>https://github.com/VladimirUAZ/ExceptionSnapshotExtension.git</MoreInfo>
         <Icon>Resources\ExceptionBreak.png</Icon>
     </Metadata>
-    <Installation>
+    <Installation ExtensionType="VSSDK+VisualStudio.Extensibility" >
         <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[15.0, 17.0)" />
     </Installation>
     <Dependencies>

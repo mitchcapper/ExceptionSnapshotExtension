@@ -6,18 +6,18 @@
 
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:VM="clr-namespace:ExceptionSnapshotExtension.Viewmodels;assembly=ExceptionSnapshotExtension"
-             xmlns:Ctr="clr-namespace:ExceptionSnapshotExtension.Controls"
-             xmlns:acb="clr-namespace:AttachedCommandBehavior"
+             xmlns:acb="clr-namespace:AttachedCommandBehavior;assembly=ExceptionSnapshotExtension"
              xmlns:vs_shell="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
-             Background="{DynamicResource {x:Static vsshell:VsBrushes.WindowKey}}"
+			 xmlns:controls="clr-namespace:ExceptionSnapshotExtension.Controls"
+			 Background="{DynamicResource {x:Static vsshell:VsBrushes.WindowKey}}"
              Foreground="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
              mc:Ignorable="d"
-             d:DesignHeight="500" d:DesignWidth="300"
+             d:DesignHeight="500" d:DesignWidth="400"
              d:DataContext="{d:DesignInstance Type=VM:ToolWindowVM, IsDesignTimeCreatable=True}"
              Name="MyToolWindow">
 	<UserControl.Resources>
 		<!-- Converters -->
-		<Ctr:BoolToVisibilityConverter x:Key="BoolToVis"/>
+		<controls:BoolToVisibilityConverter x:Key="BoolToVis"/>
 
 		<!-- TextBox Style -->
 		<Style TargetType="{x:Type TextBox}">
@@ -186,7 +186,7 @@
                 Loaded="ListView_Loaded"
                 SizeChanged="ListView_SizeChanged" Grid.RowSpan="2">
 						<ListView.Resources>
-							<Ctr:DataContextSpy x:Key="dataContextSpy"/>
+							<controls:DataContextSpy x:Key="dataContextSpy"/>
 							<Style TargetType="{x:Type ListViewItem}">
 								<Setter Property="HorizontalContentAlignment" Value="Stretch" />
 								<Setter Property="acb:CommandBehavior.Event" Value="MouseDoubleClick"/>
@@ -227,21 +227,21 @@
 						</ListView.Resources>
 						<ListView.View>
 							<GridView>
-								<GridViewColumn Width="30" Header="">
+								<GridViewColumn Header="Del" Width="45">
 									<GridViewColumn.CellTemplate>
 										<DataTemplate>
 											<Button Content="X"
                                             Command="{Binding Source={StaticResource dataContextSpy}, Path=DataContext.DeleteSnapshotCommand}"
                                             CommandParameter="{Binding}"
-                                            MinWidth="20"
-                                            Padding="2"
-                                            Margin="0"
+                                            Padding="0" Background="Lime"
+													MinWidth="20"
+                                            Margin="0" Height="30"
                                             ToolTip="Delete this snapshot"/>
 										</DataTemplate>
 									</GridViewColumn.CellTemplate>
 								</GridViewColumn>
 								<GridViewColumn Width="Auto" Header="Name" DisplayMemberBinding="{Binding Name}"/>
-								<GridViewColumn Width="Auto" Header="Date" DisplayMemberBinding="{Binding CreatedOn}"/>
+								<GridViewColumn Header="Date" DisplayMemberBinding="{Binding CreatedOn}"/>
 
 								<!--<GridViewColumn Width="Auto" Header="Break">
                             <GridViewColumn.CellTemplate>

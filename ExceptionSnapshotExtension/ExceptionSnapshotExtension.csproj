@@ -14,6 +14,8 @@
 		<CreateVsixContainer>true</CreateVsixContainer>
 		<LangVersion>preview</LangVersion>
 		<CopyVsixExtensionFiles>false</CopyVsixExtensionFiles>
+		<VssdkCompatibleExtension>true</VssdkCompatibleExtension>
+
 		<UseWPF>true</UseWPF>
 		<VSSDKTargetPlatformRegRootSuffix>Exp</VSSDKTargetPlatformRegRootSuffix>
   </PropertyGroup>
@@ -23,17 +25,16 @@
     <PackageReference Include="Microsoft.VisualStudio.Debugger.InteropA" Version="17.14.40260" />
     <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.14.40264" />
     <PackageReference Include="Microsoft.VisualStudio.Shell.Interop" Version="17.14.40260" />
-    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2120">
-			
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+		<PackageReference Include="Microsoft.VisualStudio.Extensibility" Version="17.14.2098" />
+		<PackageReference Include="Microsoft.VisualStudio.Extensibility.Sdk" Version="17.14.40608" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.Extensibility.Build" Version="17.14.40608" PrivateAssets="all" />
 		<PackageReference Include="Community.VisualStudio.Toolkit.17" Version="17.0.527" ExcludeAssets="Runtime">
 			<IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="Microsoft.VisualStudio.ProjectSystem" Version="17.9.380" />
 		<PackageReference Include="Microsoft.VisualStudio.ProjectSystem.Query" Version="17.14.145" />
 		<PackageReference Include="Microsoft.VisualStudio.ProjectSystem.SDK" Version="17.9.380" />
-		
+
 		<PackageReference Include="CI.Microsoft.VisualStudio.ProjectSystem.Managed" Version="17.12.42" />
 		<PackageReference Include="Microsoft.Build" Version="17.14.28" />
 		<PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.12.40392" ExcludeAssets="runtime" />
@@ -48,10 +49,12 @@
       <SubType>Designer</SubType>
 			<Generator>VsixManifestGenerator</Generator>
     </None>
+    <EmbeddedResource Include="OurExceptionWindowWrapperContent.xaml" />
 		<EmbeddedResource Include="source.extension.vsixmanifest">
 			<Generator>VsixManifestGenerator</Generator>
 			<LastGenOutput>source.extension.cs</LastGenOutput>
 		</EmbeddedResource>
+		<Page Remove="OurExceptionWindowWrapperContent.xaml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -64,10 +67,10 @@
     <Content Include="TODO.txt" />
   </ItemGroup>
 
-  
+
 
   <ItemGroup>
-    <VSCTCompile Include="ExceptionPackage.vsct">
+    <VSCTCompile Include="Exception.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
       <SubType>Designer</SubType>
     </VSCTCompile>
@@ -78,11 +81,23 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Update="Exception.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Exception.vsct</DependentUpon>
+    </Compile>
     <Compile Update="source.extension.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>
       <DependentUpon>source.extension.vsixmanifest</DependentUpon>
     </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Exception.vsct">
+      <Generator>VsctGenerator</Generator>
+      <LastGenOutput>Exception.cs</LastGenOutput>
+    </None>
   </ItemGroup>
 	<Import Sdk="Microsoft.NET.Sdk" Project="Sdk.targets" />
 	<Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="Exists('$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets')" />
@@ -94,5 +109,5 @@
 			<VSIXCopyLocalReferenceSourceItem Include="@(ReferenceCopyLocalPaths)" />
 		</ItemGroup>
 	</Target>
-	
+
 </Project>
